@@ -71,24 +71,24 @@ export default function App() {
 
   // --- 🚀 企業級重構：內部 API 代理呼叫 ---
   const callGeminiAPI = async (promptText, systemInstruction, responseSchema, maxRetries = 3) => {
-    // 取出前端專用的內部防護 Token (不會暴露 Gemini 金鑰)
-    // 💡 部署至 GitHub / Vercel 時，請改回：const internalToken = import.meta.env.VITE_INTERNAL_TOKEN;
-    const internalToken = "";
+    
+    // 💡 關鍵修正：從環境變數讀取 Token，不要設為空字串 ""
+    const internalToken = import.meta.env.VITE_INTERNAL_TOKEN;
 
+    // 防呆檢查：如果真的讀不到，在開發者主控台印出警告
     if (!internalToken && typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-      console.warn("🚨 系統偵測不到 VITE_INTERNAL_TOKEN，請確認環境變數是否正確設置。");
+      console.error("🚨 系統偵測不到 VITE_INTERNAL_TOKEN！請檢查 Vercel 環境變數設定。");
     }
     
     const delays = [1000, 2000, 4000];
     
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // 🔥 呼叫我們自己寫好的 Vercel Serverless Function (/api/ai)
         const response = await fetch('/api/ai', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${internalToken}`
+            'Authorization': `Bearer ${internalToken}` // 現在這裡會帶上正確的暗號了
           },
           body: JSON.stringify({
             promptText: promptText,
@@ -96,6 +96,7 @@ export default function App() {
             responseSchema: responseSchema
           })
         });
+// ... 剩下的程式碼保持不變
 
         // 捕捉 HTTP 錯誤 (401 驗證失敗, 429 請求過多, 500 伺服器錯誤)
         if (!response.ok) {
