@@ -45,8 +45,8 @@ export default async function handler(req, res) {
       throw new Error("伺服器遺失 GEMINI_API_KEY 環境變數");
     }
 
-    // 呼叫 Google API (使用穩定版 1.5-flash 與 v1beta 端點)
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // 呼叫 Google API (使用2.0-flash 與 v1beta 端點)
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(endpoint, {
       method: 'POST',
