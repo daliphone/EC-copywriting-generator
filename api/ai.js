@@ -53,7 +53,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("伺服器遺失 GEMINI_API_KEY 環境變數");
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-04-17:generateContent?key=${apiKey}`;
 
     // 🔧 schema 轉小寫，符合 gemini-2.0 規格
     const normalizedSchema = responseSchema ? normalizeSchema(responseSchema) : undefined;
