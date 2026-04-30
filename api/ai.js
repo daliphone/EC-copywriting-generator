@@ -1,7 +1,7 @@
 // Vercel Serverless Function
 // 檔案位置：/api/ai.js
 
-// 🔧 將前端傳來的大寫 type（OBJECT/STRING/ARRAY）轉成 gemini-2.0 要求的小寫
+// 🔧 schema type 大寫轉小寫（符合 gemini 規格）
 function normalizeSchema(schema) {
   if (!schema || typeof schema !== 'object') return schema;
   const result = { ...schema };
@@ -14,6 +14,22 @@ function normalizeSchema(schema) {
   if (result.items) result.items = normalizeSchema(result.items);
   if (result.required) result.required = result.required;
   return result;
+}
+
+// 🔄 帶重試的 fetch（自動處理 503/429 暫時性錯誤）
+async function fetchWithRetry(url, options, maxRetries = 3) {
+  let lastResponse;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const response = await fetch(url, options);
+    if (response.ok || (response.status !== 503 && response.status !== 429)) {
+      return response;
+    }
+    lastResponse = response;
+    const waitMs = attempt * 1500; // 1.5s → 3s → 4.5s
+    console.log(`[Retry ${attempt}/${maxRetries}] status=${response.status}, waiting ${waitMs}ms`);
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+  }
+  return lastResponse;
 }
 
 export default async function handler(req, res) {
@@ -43,7 +59,7 @@ export default async function handler(req, res) {
 
   // 4. Log
   console.log({
-    event: "AI_Generation_Request",
+    event: 'AI_Generation_Request',
     time: new Date().toISOString(),
     usage: global.usageCount,
     ip: req.headers['x-forwarded-for'] || 'unknown'
@@ -51,30 +67,29 @@ export default async function handler(req, res) {
 
   try {
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("伺服器遺失 GEMINI_API_KEY 環境變數");
+    if (!apiKey) throw new Error('伺服器遺失 GEMINI_API_KEY 環境變數');
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-    // 🔧 schema 轉小寫，符合 gemini-2.0 規格
     const normalizedSchema = responseSchema ? normalizeSchema(responseSchema) : undefined;
 
     const body = {
       contents: [{ parts: [{ text: promptText }] }],
       system_instruction: { parts: [{ text: systemInstruction || '' }] },
       generation_config: {
-        response_mime_type: "application/json",
+        response_mime_type: 'application/json',
         ...(normalizedSchema && { response_schema: normalizedSchema })
       }
     };
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
 
     if (!response.ok) {
-      const errData = await response.json();
+      const errData = await response.json().catch(() => ({}));
       throw new Error(`Google API 拒絕 (${response.status}): ${errData.error?.message || 'Unknown'}`);
     }
 
@@ -84,7 +99,7 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('Backend AI Error:', err.message);
     return res.status(500).json({
-      error: "系統核心連線異常，請稍後再試 🙏",
+      error: '系統核心連線異常，請稍後再試 🙏',
       details: err.message
     });
   }
