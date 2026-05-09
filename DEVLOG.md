@@ -3,7 +3,7 @@
 **專案名稱：** 馬尼雙軌營運引擎 / Money Engine 電商工具箱  
 **線上網址：** https://ec-copywriting-generator.vercel.app  
 **GitHub：** https://github.com/daliphone/EC-copywriting-generator  
-**最後更新：** 2026-05-09
+**最後更新：** 2026-05-09（v1.1）
 
 ---
 
@@ -84,6 +84,8 @@ Google Gemini 2.5 Flash
 | 限流防護 | 2,000 req/day（Serverless 實例層級）| ✅ |
 | Schema 正規化 | normalizeSchema() 處理 Gemini type 大小寫 | ✅ |
 | API 重試機制 | fetchWithRetry() 自動處理 503/429，指數退避 | ✅ |
+| LocalStorage 歷史紀錄 | 每次產出自動儲存，右側抽屜瀏覽，可逐筆複製或刪除 | ✅ |
+| 匯出 CSV | 歷史紀錄一鍵匯出，含 UTF-8 BOM，Excel 直接開啟 | ✅ |
 
 ---
 
@@ -120,7 +122,7 @@ VITE_INTERNAL_TOKEN=<同上>
 - React 版，使用 Gemini 1.5 Flash
 - 問題：無 schema 正規化、無重試機制、`.env.local` 格式錯誤
 
-### EC-copywriting-generator（現行正式版）—— 2026-05-09
+### EC-copywriting-generator v1.0 —— 2026-05-09
 
 修正的 6 項問題：
 
@@ -138,7 +140,15 @@ VITE_INTERNAL_TOKEN=<同上>
 | 項目 | 說明 |
 |------|------|
 | 限流非持久 | `global.usageCount` 在 Serverless 冷啟動後歸零，無法跨實例計數 |
-| 無歷史紀錄 | 產出的標題與文案關閉後即消失 |
+| 歷史紀錄各自獨立 | localStorage 儲存於各自瀏覽器，三人資料不共享，需匯出 CSV 手動合併 |
+
+### EC-copywriting-generator v1.1 —— 2026-05-09
+
+新增功能：
+
+1. **LocalStorage 歷史紀錄**：每次產出後自動儲存，各保留最多 50 筆，右側抽屜瀏覽
+2. **匯出 CSV**：標題歷史（欄位：時間/平台/品牌/型號/規格/促銷/軌道/策略/標題）；文案歷史（欄位：時間/商品名稱/模式/平台/標題/文案前100字/標籤）；含 UTF-8 BOM，Excel 直接開啟
+3. LocalStorage key：`money_title_history`、`money_copy_history`
 
 ---
 
@@ -146,8 +156,6 @@ VITE_INTERNAL_TOKEN=<同上>
 
 | 優先 | 功能 | 說明 |
 |------|------|------|
-| 高 | LocalStorage 歷史紀錄 | 保存已產出的標題與文案，方便對照回溯 |
-| 中 | 匯出 CSV | 批量標題可直接匯出貼到試算表 |
 | 中 | 多模型備援 | Gemini 失效時自動切換備用模型 |
 | 低 | 真實限流（Redis/KV）| 需接 KV Store 做跨實例持久化計數 |
 | 低 | 使用量儀表板 | 在 Vercel 之外獨立顯示 API 用量統計 |
