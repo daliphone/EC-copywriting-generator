@@ -4,8 +4,12 @@ import {
   ShoppingBag, ShoppingCart, Box,
   Settings, X, Zap,
   Check, AlertTriangle, Tag, LayoutTemplate, LayoutPanelLeft,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Clock, Download
 } from 'lucide-react';
+
+const TITLE_HISTORY_KEY = 'money_title_history';
+const COPY_HISTORY_KEY  = 'money_copy_history';
+const MAX_HISTORY = 50;
 
 // ============================================================
 // 平台規範（基於官方文件確認）
@@ -213,6 +217,11 @@ function TitleEngineApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout
   const [results, setResults]         = useState({ ruleBased: null, aiBased: null, aiSkipped: false });
   const [rawPaste, setRawPaste]       = useState('');
   const [isParsing, setIsParsing]     = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [titleHistory, setTitleHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(TITLE_HISTORY_KEY) || '[]'); }
+    catch { return []; }
+  });
 
   useEffect(() => {
     const def = TITLE_DEFAULTS[platform] || TITLE_DEFAULTS['Shopee 蝦皮'];
@@ -220,6 +229,34 @@ function TitleEngineApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout
   }, []);
 
   const activePlatConfig = TITLE_PLATFORMS.find(p => p.id === platform);
+
+  const saveToTitleHistory = (entry) => {
+    setTitleHistory(prev => {
+      const next = [entry, ...prev].slice(0, MAX_HISTORY);
+      localStorage.setItem(TITLE_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+  const deleteFromTitleHistory = (id) => {
+    setTitleHistory(prev => {
+      const next = prev.filter(e => e.id !== id);
+      localStorage.setItem(TITLE_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+  const clearTitleHistory = () => { setTitleHistory([]); localStorage.removeItem(TITLE_HISTORY_KEY); };
+  const exportTitleCsv = () => {
+    const rows = [['時間', '平台', '品牌', '型號', '規格', '促銷', '軌道', '策略', '標題']];
+    titleHistory.forEach(e => {
+      const ts = new Date(e.ts).toLocaleString('zh-TW');
+      const plat = TITLE_PLATFORMS.find(p => p.id === e.platform)?.short || e.platform;
+      e.ruleBased?.forEach(r => rows.push([ts, plat, e.brand||'', e.model||'', e.specs||'', e.promo||'', '規則軌', r.strategy, r.title]));
+      e.aiBased?.forEach((r, i) => rows.push([ts, plat, e.brand||'', e.model||'', e.specs||'', e.promo||'', 'AI軌', `提案${i+1}`, r.title]));
+    });
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'})), download: `標題歷史_${new Date().toISOString().slice(0,10)}.csv` });
+    a.click();
+  };
 
   // --- Smart Paste ---
   const handleSmartParse = async () => {
@@ -325,10 +362,12 @@ function TitleEngineApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout
     const shouldRunAi = !!(formData.sellingPoints.trim() || formData.audience.trim() || formData.seo.trim());
     if (!shouldRunAi) {
       setResults(prev => ({ ...prev, aiSkipped: true }));
+      saveToTitleHistory({ id: Date.now(), ts: new Date().toISOString(), platform, brand: formData.brand, model: formData.model, specs: formData.specs, promo: formData.promo, ruleBased, aiBased: null });
       return;
     }
 
     setIsAiGenerating(true);
+    let aiBased = null;
     try {
       const platformRules = {
         'Shopee 蝦皮': `蝦皮標題上限120字，前30字放最重要關鍵字，可用促銷標籤，加入「馬尼通訊」店家名稱`,
@@ -351,11 +390,13 @@ function TitleEngineApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout
         required: ["options"]
       };
       const aiData = await callGeminiAPI(userPrompt, sysPrompt, schema);
-      setResults(prev => ({ ...prev, aiBased: aiData.options }));
+      aiBased = aiData.options;
+      setResults(prev => ({ ...prev, aiBased }));
     } catch (err) {
       setError(`<b>AI 生成失敗</b><br/>${err.message}`);
     } finally {
       setIsAiGenerating(false);
+      saveToTitleHistory({ id: Date.now(), ts: new Date().toISOString(), platform, brand: formData.brand, model: formData.model, specs: formData.specs, promo: formData.promo, ruleBased, aiBased });
     }
   };
 
@@ -555,9 +596,16 @@ function TitleEngineApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout
         </div>
       )}
 
-      <div className="mb-6">
-        <h1 className="text-[26px] font-bold">🎯 雙軌標題引擎</h1>
-        <p className="text-gray-500 text-[14px]">規則保底 ✕ AI 創意，蝦皮／Momo／Yahoo 平台規範已內建。</p>
+      <div className="mb-6 flex justify-between items-end">
+        <div>
+          <h1 className="text-[26px] font-bold">🎯 雙軌標題引擎</h1>
+          <p className="text-gray-500 text-[14px]">規則保底 ✕ AI 創意，蝦皮／Momo／Yahoo 平台規範已內建。</p>
+        </div>
+        <button onClick={() => setShowHistory(true)}
+          className="flex items-center gap-1.5 text-[13px] border px-3 py-1.5 rounded-[8px] bg-white hover:bg-gray-50 transition-colors">
+          <Clock size={14} /> 歷史紀錄
+          {titleHistory.length > 0 && <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{titleHistory.length}</span>}
+        </button>
       </div>
 
       <div className={isModernLayout ? 'animate-in fade-in duration-500' : 'animate-in fade-in duration-300'}>
@@ -569,6 +617,69 @@ function TitleEngineApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout
           </div>
           <div className="md:col-span-7"><ResultSection /></div>
         </div>
+      </div>
+
+      {/* 歷史紀錄抽屜 */}
+      {showHistory && <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowHistory(false)} />}
+      <div className={`fixed inset-y-0 right-0 w-[400px] max-w-[95vw] bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300 ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="px-5 py-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
+          <h3 className="font-bold text-[15px]">標題歷史 <span className="text-gray-400 font-normal text-[13px]">({titleHistory.length})</span></h3>
+          <div className="flex items-center gap-2">
+            {titleHistory.length > 0 && (
+              <button onClick={exportTitleCsv} className="text-[12px] border px-2.5 py-1.5 rounded-[6px] hover:bg-gray-100 flex items-center gap-1 text-gray-600">
+                <Download size={12} /> 匯出 CSV
+              </button>
+            )}
+            <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {titleHistory.length === 0 ? (
+            <div className="text-center text-gray-400 py-16">
+              <Clock size={36} className="mx-auto mb-3 opacity-20" />
+              <p className="text-[13px]">尚無紀錄</p>
+            </div>
+          ) : titleHistory.map(entry => {
+            const pc = TITLE_PLATFORMS.find(p => p.id === entry.platform);
+            return (
+              <div key={entry.id} className="border rounded-[10px] p-3 bg-white text-[12px]">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-bold text-[13px] truncate">{entry.brand} {entry.model}</span>
+                    {pc && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${pc.bg} ${pc.color}`}>{pc.short}</span>}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-gray-400 shrink-0 ml-2">
+                    <span className="text-[10px]">{new Date(entry.ts).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                    <button onClick={() => deleteFromTitleHistory(entry.id)} className="hover:text-red-400"><X size={12} /></button>
+                  </div>
+                </div>
+                {entry.ruleBased?.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 py-1 border-t border-gray-50">
+                    <span className="text-[10px] text-orange-400 shrink-0 w-6">規</span>
+                    <span className="flex-1 truncate text-gray-700">{r.title}</span>
+                    <button onClick={() => handleCopy(r.title, `h_r_${entry.id}_${i}`)} className="shrink-0 text-[10px] text-orange-500 hover:text-orange-700">
+                      {copiedState[`h_r_${entry.id}_${i}`] ? '✓' : '複製'}
+                    </button>
+                  </div>
+                ))}
+                {entry.aiBased?.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 py-1 border-t border-gray-50">
+                    <span className="text-[10px] text-purple-400 shrink-0 w-6">AI</span>
+                    <span className="flex-1 truncate text-gray-700">{r.title}</span>
+                    <button onClick={() => handleCopy(r.title, `h_a_${entry.id}_${i}`)} className="shrink-0 text-[10px] text-purple-500 hover:text-purple-700">
+                      {copiedState[`h_a_${entry.id}_${i}`] ? '✓' : '複製'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+        {titleHistory.length > 0 && (
+          <div className="p-3 border-t shrink-0">
+            <button onClick={clearTitleHistory} className="w-full text-[12px] text-red-400 hover:text-red-600 py-1.5 transition-colors">清除全部紀錄</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -589,6 +700,11 @@ function CopywriterApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout 
   const resultRef                       = useRef(null);
   const [rawPaste, setRawPaste]         = useState('');
   const [isParsing, setIsParsing]       = useState(false);
+  const [showCopyHistory, setShowCopyHistory] = useState(false);
+  const [copyHistory, setCopyHistory]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem(COPY_HISTORY_KEY) || '[]'); }
+    catch { return []; }
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem('money_copywriter_templates');
@@ -598,6 +714,36 @@ function CopywriterApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout 
   const saveTemplates = () => {
     localStorage.setItem('money_copywriter_templates', JSON.stringify(templates));
     setIsSettingsOpen(false);
+  };
+
+  const saveToCopyHistory = (entry) => {
+    setCopyHistory(prev => {
+      const next = [entry, ...prev].slice(0, MAX_HISTORY);
+      localStorage.setItem(COPY_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+  const deleteFromCopyHistory = (id) => {
+    setCopyHistory(prev => {
+      const next = prev.filter(e => e.id !== id);
+      localStorage.setItem(COPY_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+  const clearCopyHistory = () => { setCopyHistory([]); localStorage.removeItem(COPY_HISTORY_KEY); };
+  const exportCopyCsv = () => {
+    const rows = [['時間', '商品名稱', '模式', '平台', '標題', '文案（前100字）', '標籤']];
+    copyHistory.forEach(e => {
+      const ts = new Date(e.ts).toLocaleString('zh-TW');
+      const modeLabel = e.mode === 'ai' ? 'AI智能' : '模組文案';
+      COPY_PLATFORMS.forEach(p => {
+        const r = e.results?.[p.id];
+        if (r) rows.push([ts, e.productName||'', modeLabel, p.name, r.title||'', (r.body||'').slice(0,100), (r.tags||[]).join(' ')]);
+      });
+    });
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'})), download: `文案歷史_${new Date().toISOString().slice(0,10)}.csv` });
+    a.click();
   };
 
   const handleInput = e => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -645,6 +791,7 @@ function CopywriterApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout 
           newResults[p.id] = { title: formData.productName, body, tags: baseTags };
         });
         setResults(newResults);
+        saveToCopyHistory({ id: Date.now(), ts: new Date().toISOString(), productName: formData.productName, mode: 'template', results: newResults });
         setIsGenerating(false);
         if (window.innerWidth < 768) resultRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 400);
@@ -672,6 +819,7 @@ function CopywriterApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout 
         responseSchema
       );
       setResults(generatedJson);
+      saveToCopyHistory({ id: Date.now(), ts: new Date().toISOString(), productName: formData.productName, mode: 'ai', results: generatedJson });
       if (window.innerWidth < 768) resultRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
       setError(`<b>AI 生成失敗</b><br/>${err.message}`);
@@ -769,10 +917,17 @@ function CopywriterApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout 
           <h1 className="text-[26px] font-bold">✍️ AI 文案產生器</h1>
           <p className="text-gray-500 text-[14px]">蝦皮／momo／PChome／Yahoo 四平台文案同步生成。</p>
         </div>
-        <button onClick={() => setIsSettingsOpen(true)}
-          className="flex items-center gap-1.5 text-[13px] border px-3 py-1.5 rounded-[8px] bg-white hover:bg-gray-50 transition-colors">
-          <Settings size={16} /> 模組設定
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowCopyHistory(true)}
+            className="flex items-center gap-1.5 text-[13px] border px-3 py-1.5 rounded-[8px] bg-white hover:bg-gray-50 transition-colors">
+            <Clock size={14} /> 歷史紀錄
+            {copyHistory.length > 0 && <span className="bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{copyHistory.length}</span>}
+          </button>
+          <button onClick={() => setIsSettingsOpen(true)}
+            className="flex items-center gap-1.5 text-[13px] border px-3 py-1.5 rounded-[8px] bg-white hover:bg-gray-50 transition-colors">
+            <Settings size={16} /> 模組設定
+          </button>
+        </div>
       </div>
 
       <div className={isModernLayout ? 'animate-in fade-in duration-500' : 'animate-in fade-in duration-300'}>
@@ -839,6 +994,64 @@ function CopywriterApp({ handleCopy, copiedState, callGeminiAPI, isModernLayout 
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 文案歷史紀錄抽屜 */}
+      {showCopyHistory && <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowCopyHistory(false)} />}
+      <div className={`fixed inset-y-0 right-0 w-[400px] max-w-[95vw] bg-white shadow-2xl z-50 flex flex-col transition-transform duration-300 ${showCopyHistory ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="px-5 py-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
+          <h3 className="font-bold text-[15px]">文案歷史 <span className="text-gray-400 font-normal text-[13px]">({copyHistory.length})</span></h3>
+          <div className="flex items-center gap-2">
+            {copyHistory.length > 0 && (
+              <button onClick={exportCopyCsv} className="text-[12px] border px-2.5 py-1.5 rounded-[6px] hover:bg-gray-100 flex items-center gap-1 text-gray-600">
+                <Download size={12} /> 匯出 CSV
+              </button>
+            )}
+            <button onClick={() => setShowCopyHistory(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {copyHistory.length === 0 ? (
+            <div className="text-center text-gray-400 py-16">
+              <Clock size={36} className="mx-auto mb-3 opacity-20" />
+              <p className="text-[13px]">尚無紀錄</p>
+            </div>
+          ) : copyHistory.map(entry => (
+            <div key={entry.id} className="border rounded-[10px] p-3 bg-white text-[12px]">
+              <div className="flex justify-between items-center mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-bold text-[13px] truncate">{entry.productName}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${entry.mode === 'ai' ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-600'}`}>
+                    {entry.mode === 'ai' ? 'AI' : '模組'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-gray-400 shrink-0 ml-2">
+                  <span className="text-[10px]">{new Date(entry.ts).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                  <button onClick={() => deleteFromCopyHistory(entry.id)} className="hover:text-red-400"><X size={12} /></button>
+                </div>
+              </div>
+              {COPY_PLATFORMS.map(p => {
+                const r = entry.results?.[p.id];
+                if (!r) return null;
+                const fullText = `【${r.title}】\n\n${r.body}\n\n${r.tags?.map(t=>`#${t}`).join(' ')||''}`;
+                return (
+                  <div key={p.id} className="flex items-center gap-2 py-1 border-t border-gray-50">
+                    <span className={`text-[10px] font-bold shrink-0 w-10 ${p.color}`}>{p.name.replace('購物網','').replace('購物','').replace('拍賣','')}</span>
+                    <span className="flex-1 truncate text-gray-700">{r.title}</span>
+                    <button onClick={() => handleCopy(fullText, `h_c_${entry.id}_${p.id}`)} className="shrink-0 text-[10px] text-orange-500 hover:text-orange-700">
+                      {copiedState[`h_c_${entry.id}_${p.id}`] ? '✓' : '複製'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        {copyHistory.length > 0 && (
+          <div className="p-3 border-t shrink-0">
+            <button onClick={clearCopyHistory} className="w-full text-[12px] text-red-400 hover:text-red-600 py-1.5 transition-colors">清除全部紀錄</button>
+          </div>
+        )}
       </div>
 
       {/* 模組設定 Modal */}
